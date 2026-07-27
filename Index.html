@@ -1,0 +1,1617 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SmartFlex - AI Posture Tracking & Ergonomics</title>
+  
+  <!-- Primary Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- Primary Libraries (jsDelivr) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0/dist/pose-detection.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- Fallback Script Loader -->
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      if (typeof tf === 'undefined') {
+        let s = document.createElement('script');
+        s.src = "https://unpkg.com/@tensorflow/tfjs@4.10.0/dist/tf.min.js";
+        document.head.appendChild(s);
+      }
+      if (typeof poseDetection === 'undefined') {
+        let s = document.createElement('script');
+        s.src = "https://unpkg.com/@tensorflow-models/pose-detection@2.1.0/dist/pose-detection.min.js";
+        document.head.appendChild(s);
+      }
+      if (typeof Chart === 'undefined') {
+        let s = document.createElement('script');
+        s.src = "https://unpkg.com/chart.js@4.4.0/dist/chart.umd.min.js";
+        document.head.appendChild(s);
+      }
+    });
+  </script>
+
+  <style>
+    :root {
+      --primary: #0284c7;
+      --primary-hover: #0369a1;
+      --primary-light: #e0f2fe;
+      --secondary: #0f172a;
+      --bg-main: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      
+      --status-good: #10b981;
+      --status-good-bg: #d1fae5;
+      --status-warn: #f59e0b;
+      --status-warn-bg: #fef3c7;
+      --status-danger: #ef4444;
+      --status-danger-bg: #fee2e2;
+      --status-unknown: #94a3b8;
+      --status-unknown-bg: #f1f5f9;
+
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+      --radius: 12px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Kanit', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      overflow-x: hidden;
+      padding-bottom: 70px; /* Space for Mobile Bottom Nav */
+    }
+
+    @media (min-width: 768px) {
+      body {
+        padding-bottom: 0;
+      }
+    }
+
+    /* Header & Navigation */
+    header {
+      background-color: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .header-container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0.75rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    .brand-logo i {
+      font-size: 1.5rem;
+    }
+
+    .desktop-nav {
+      display: none;
+      gap: 0.5rem;
+    }
+
+    @media (min-width: 768px) {
+      .desktop-nav {
+        display: flex;
+      }
+    }
+
+    .nav-btn {
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius);
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s ease;
+    }
+
+    .nav-btn:hover {
+      background-color: var(--primary-light);
+      color: var(--primary);
+    }
+
+    .nav-btn.active {
+      background-color: var(--primary);
+      color: white;
+    }
+
+    /* System Status Pill */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      background-color: var(--status-unknown-bg);
+      color: var(--text-muted);
+    }
+
+    .status-pill.online {
+      background-color: var(--status-good-bg);
+      color: var(--status-good);
+    }
+
+    .status-pill.offline {
+      background-color: var(--status-danger-bg);
+      color: var(--status-danger);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: currentColor;
+    }
+
+    /* Main Content Container */
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      width: 100%;
+      padding: 1rem;
+      flex: 1;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Card Layouts */
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--secondary);
+    }
+
+    /* Grid Layouts */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+    }
+
+    @media (min-width: 768px) {
+      .grid-2 {
+        grid-template-columns: 1fr 1fr;
+      }
+      .grid-4 {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+
+    /* Camera Viewport */
+    .viewport-container {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background-color: #000;
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    video, canvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    video {
+      transform: scaleX(-1); /* Mirror view */
+    }
+
+    canvas {
+      transform: scaleX(-1); /* Mirror overlay */
+      z-index: 10;
+    }
+
+    .camera-overlay-info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .badge-overlay {
+      background: rgba(0,0,0,0.65);
+      color: white;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      backdrop-filter: blur(4px);
+    }
+
+    /* Controls & Forms */
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 0.375rem;
+      color: var(--text-main);
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 0.625rem 0.875rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+      background-color: var(--surface);
+    }
+
+    .form-control:focus {
+      border-color: var(--primary);
+    }
+
+    .btn {
+      padding: 0.625rem 1.25rem;
+      border-radius: var(--radius);
+      border: none;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: all 0.2s ease;
+      font-size: 0.95rem;
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background-color: var(--primary-hover);
+    }
+
+    .btn-secondary {
+      background-color: #e2e8f0;
+      color: var(--secondary);
+    }
+
+    .btn-secondary:hover {
+      background-color: #cbd5e1;
+    }
+
+    .btn-danger {
+      background-color: var(--status-danger);
+      color: white;
+    }
+
+    .btn-block {
+      width: 100%;
+    }
+
+    /* Live Gauge & Indicators */
+    .gauge-card {
+      text-align: center;
+      padding: 1rem;
+      border-radius: var(--radius);
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+
+    .gauge-value {
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .gauge-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    /* Mobile Bottom Navigation */
+    .mobile-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 60px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      z-index: 100;
+    }
+
+    @media (min-width: 768px) {
+      .mobile-nav {
+        display: none;
+      }
+    }
+
+    .mobile-nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      text-decoration: none;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      width: 25%;
+    }
+
+    .mobile-nav-item i {
+      font-size: 1.2rem;
+    }
+
+    .mobile-nav-item.active {
+      color: var(--primary);
+      font-weight: 600;
+    }
+
+    /* Data Table */
+    .table-responsive {
+      overflow-x: auto;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.875rem;
+    }
+
+    th {
+      background-color: #f1f5f9;
+      padding: 0.75rem 1rem;
+      font-weight: 600;
+      color: var(--secondary);
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* Toast Notification */
+    #toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .toast {
+      background: #1e293b;
+      color: white;
+      padding: 12px 20px;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* Educational Cards */
+    .guide-card {
+      border-left: 4px solid var(--primary);
+    }
+
+    .guide-img {
+      width: 100%;
+      height: 180px;
+      background-color: #e2e8f0;
+      border-radius: var(--radius);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    /* Print Styles */
+    @media print {
+      header, .mobile-nav, .no-print {
+        display: none !important;
+      }
+      body {
+        padding: 0;
+        background: white;
+      }
+      .card {
+        border: none;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="header-container">
+      <a href="#" class="brand-logo">
+        <i class="fa-solid fa-person-dots-from-line"></i>
+        <span>SmartFlex</span>
+      </a>
+
+      <nav class="desktop-nav">
+        <button class="nav-btn active" onclick="switchTab('tab-monitor')">
+          <i class="fa-solid fa-camera"></i> ตรวจวัดท่าทาง
+        </button>
+        <button class="nav-btn" onclick="switchTab('tab-guide')">
+          <i class="fa-solid fa-book-open"></i> คำแนะนำท่านั่ง
+        </button>
+        <button class="nav-btn" onclick="switchTab('tab-history')">
+          <i class="fa-solid fa-chart-line"></i> ผลย้อนหลัง
+        </button>
+        <button class="nav-btn" onclick="switchTab('tab-settings')">
+          <i class="fa-solid fa-gear"></i> ตั้งค่าระบบ
+        </button>
+      </nav>
+
+      <div class="status-pill offline" id="backend-status-pill">
+        <span class="status-dot"></span>
+        <span id="backend-status-text">GAS: ไม่ได้เชื่อมต่อ</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main>
+
+    <!-- TAB 1: MONITOR & REALTIME CAMERA -->
+    <section id="tab-monitor" class="tab-content active">
+      <div class="grid-2">
+        <!-- Left Column: Camera Viewport & Controls -->
+        <div>
+          <div class="card">
+            <div class="card-title">
+              <i class="fa-solid fa-video"></i> กล้องตรวจวัดพฤติกรรมเรียลไทม์
+            </div>
+
+            <div class="viewport-container">
+              <video id="webcam" autoplay playsinline muted></video>
+              <canvas id="canvas-overlay"></canvas>
+              
+              <div class="camera-overlay-info">
+                <span class="badge-overlay" id="badge-mode">โหมด: ส่วนบุคคล</span>
+                <span class="badge-overlay" id="badge-fps">FPS: 0</span>
+                <span class="badge-overlay" id="badge-status" style="background: rgba(16, 185, 129, 0.8);">สถานะ: ปกติ</span>
+              </div>
+            </div>
+
+            <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button class="btn btn-primary" id="btn-start-cam" onclick="startCamera()">
+                <i class="fa-solid fa-play"></i> เปิดกล้อง
+              </button>
+              <button class="btn btn-danger" id="btn-stop-cam" onclick="stopCamera()" disabled>
+                <i class="fa-solid fa-stop"></i> ปิดกล้อง
+              </button>
+              <button class="btn btn-secondary" onclick="switchCamera()">
+                <i class="fa-solid fa-camera-rotate"></i> สลับกล้อง
+              </button>
+              <button class="btn btn-secondary" id="btn-calibrate" onclick="startCalibration()" disabled>
+                <i class="fa-solid fa-bullseye"></i> จับ Baseline ท่ามาตรฐาน
+              </button>
+            </div>
+          </div>
+
+          <!-- Configuration Form Panel -->
+          <div class="card">
+            <div class="card-title"><i class="fa-solid fa-sliders"></i> ตั้งค่าการตรวจวัด</div>
+            
+            <div class="grid-2">
+              <div class="form-group">
+                <label>โหมดประมวลผล</label>
+                <select class="form-control" id="select-app-mode" onchange="onModeChange()">
+                  <option value="personal">ส่วนบุคคล (Personal - รายบุคคล)</option>
+                  <option value="classroom">ห้องเรียน (Classroom - หลายคน)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>มุมกล้อง (กรณีโหมดส่วนบุคคล)</label>
+                <select class="form-control" id="select-camera-angle" onchange="onCameraAngleChange()">
+                  <option value="front">มุมตรง (Frontal View)</option>
+                  <option value="angle45">มุมเฉียง 45 องศา (Diagonal View)</option>
+                  <option value="side">มุมด้านข้างเต็มตัว (Side View)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="form-group">
+                <label>ชื่อผู้ใช้งาน</label>
+                <input type="text" class="form-control" id="user-name" value="ผู้ใช้งานทั่วไป">
+              </div>
+              <div class="form-group">
+                <label>กลุ่ม/ชั้นเรียน/องค์กร</label>
+                <input type="text" class="form-control" id="user-org" value="General">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Realtime Indicators & Session Summary -->
+        <div>
+          <!-- Realtime Score Cards -->
+          <div class="grid-4" style="margin-bottom: 1rem;">
+            <div class="gauge-card">
+              <div class="gauge-value" id="val-score" style="color: var(--status-good);">100%</div>
+              <div class="gauge-label">คะแนนท่านั่ง</div>
+            </div>
+            <div class="gauge-card">
+              <div class="gauge-value" id="val-good-sec">0s</div>
+              <div class="gauge-label">ท่านั่งดี</div>
+            </div>
+            <div class="gauge-card">
+              <div class="gauge-value" id="val-bad-sec" style="color: var(--status-danger);">0s</div>
+              <div class="gauge-label">ท่านั่งควรปรับ</div>
+            </div>
+            <div class="gauge-card">
+              <div class="gauge-value" id="val-alerts" style="color: var(--status-warn);">0</div>
+              <div class="gauge-label">เตือนรวม</div>
+            </div>
+          </div>
+
+          <!-- Realtime Angle Metrics -->
+          <div class="card">
+            <div class="card-title"><i class="fa-solid fa-chart-simple"></i> ค่าวัดมุมข้อต่อเรียลไทม์</div>
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+              <div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 2px;">
+                  <span>ก้มหน้า / คอยื่น (Neck Angle)</span>
+                  <span id="deg-neck">0°</span>
+                </div>
+                <div style="height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+                  <div id="bar-neck" style="width: 0%; height: 100%; background: var(--primary);"></div>
+                </div>
+              </div>
+
+              <div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 2px;">
+                  <span>หลังค่อม / ตัวโน้ม (Torso Lean)</span>
+                  <span id="deg-slouch">0°</span>
+                </div>
+                <div style="height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+                  <div id="bar-slouch" style="width: 0%; height: 100%; background: var(--primary);"></div>
+                </div>
+              </div>
+
+              <div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 2px;">
+                  <span>ไหล่เอียง (Shoulder Tilt)</span>
+                  <span id="deg-shoulder">0°</span>
+                </div>
+                <div style="height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+                  <div id="bar-shoulder" style="width: 0%; height: 100%; background: var(--primary);"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Advice & Timer Controls -->
+          <div class="card" style="border-left: 4px solid var(--primary);">
+            <div class="card-title"><i class="fa-solid fa-lightbulb"></i> คำแนะนำและแจ้งเตือนพฤติกรรม</div>
+            <p id="txt-advice" style="font-size: 0.95rem; color: var(--text-main); min-height: 48px;">
+              กด "เปิดกล้อง" และจัดตำแหน่งร่างกายให้อยู่ในกรอบภาพเพื่อเริ่มตรวจประเมิน
+            </p>
+            <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+              <button class="btn btn-primary btn-block" onclick="saveSessionToBackend()">
+                <i class="fa-solid fa-cloud-arrow-up"></i> บันทึกผลลง Google Sheets
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: POSTURE GUIDELINES & EDUCATION -->
+    <section id="tab-guide" class="tab-content">
+      <div class="card">
+        <div class="card-title"><i class="fa-solid fa-book-bookmark"></i> คำแนะนำการจัดท่าทางตามหลักสรีรศาสตร์ (Ergonomics)</div>
+        <p style="color: var(--text-muted); margin-bottom: 1rem;">
+          การจัดท่าทางการนั่งที่ถูกต้องช่วยลดความเสี่ยงต่อโรคออฟฟิศซินโดรม (Office Syndrome) และเพิ่มประสิทธิภาพการทำงาน
+        </p>
+
+        <div class="grid-2">
+          <div class="card guide-card">
+            <div class="guide-img"><i class="fa-solid fa-desktop fa-3x"></i></div>
+            <h3>1. มุมมองตรง (Frontal View)</h3>
+            <ul style="margin-left: 1.2rem; margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-muted);">
+              <li>วางสายตาตรงขนานกับขอบบนของจอภาพ</li>
+              <li>ปรับระดับไหล่ให้เท่ากันทั้งสองข้าง ไม่เอียงตัว</li>
+              <li>ตั้งกล้องตรงหน้าห่างประมาณ 50-70 ซม.</li>
+            </ul>
+          </div>
+
+          <div class="card guide-card">
+            <div class="guide-img"><i class="fa-solid fa-user-clock fa-3x"></i></div>
+            <h3>2. มุมมองด้านข้าง (Side View)</h3>
+            <ul style="margin-left: 1.2rem; margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-muted);">
+              <li>ศีรษะตั้งตรง ลำคอไม่ยื่นไปข้างหน้าเกิน 15 องศา</li>
+              <li>แผ่นหลังแนบชิดพนักพิง ไม่ก้มหรือหลังค่อม</li>
+              <li>ข้อศอกงอประมาณ 90-100 องศา วางบนที่เท้าแขน</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: HISTORY & ANALYTICS -->
+    <section id="tab-history" class="tab-content">
+      <div class="card">
+        <div class="card-title" style="justify-content: space-between;">
+          <span><i class="fa-solid fa-clock-rotate-left"></i> ประวัติและสถิติการประเมิน</span>
+          <div>
+            <button class="btn btn-secondary" onclick="fetchHistoryFromBackend()"><i class="fa-solid fa-rotate"></i> ดึงข้อมูล</button>
+            <button class="btn btn-primary" onclick="exportToCSV()"><i class="fa-solid fa-file-csv"></i> ส่งออก CSV</button>
+            <button class="btn btn-secondary no-print" onclick="window.print()"><i class="fa-solid fa-print"></i> พิมพ์รายงาน</button>
+          </div>
+        </div>
+
+        <div style="height: 250px; margin-bottom: 1.5rem;">
+          <canvas id="chart-history"></canvas>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>วันที่/เวลา</th>
+                <th>ผู้ใช้</th>
+                <th>โหมด</th>
+                <th>เวลารวม</th>
+                <th>คะแนน</th>
+                <th>ปัญหาหลัก</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-history">
+              <tr>
+                <td colspan="6" style="text-align: center; color: var(--text-muted);">กดดึงข้อมูลเพื่อดูประวัติการบันทึก</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: SYSTEM SETTINGS -->
+    <section id="tab-settings" class="tab-content">
+      <div class="card">
+        <div class="card-title"><i class="fa-solid fa-gears"></i> ตั้งค่าระบบและการเชื่อมต่อ</div>
+        
+        <div class="form-group">
+          <label>Google Apps Script Web App URL (JSONP Exec Endpoint)</label>
+          <input type="url" class="form-control" id="gas-url" placeholder="https://script.google.com/macros/s/AKfycbxfBSqj8If8X_8LENFVvhHhw4Zq9ZMgt7-Cd912x1o0qQ-REHUczUOs6r3gwGQ5VEFWLQ/exec">
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label>ระยะเวลาเตือนเริ่มต้น Warning (วินาที)</label>
+            <input type="number" class="form-control" id="cfg-warn-sec" value="3" min="1" max="60">
+          </div>
+          <div class="form-group">
+            <label>ระยะเวลาเตือนวิกฤต Critical (วินาที)</label>
+            <input type="number" class="form-control" id="cfg-crit-sec" value="8" min="2" max="120">
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label>เปิดการใช้งาน เสียงสัญญาณ (Audio Beep)</label>
+            <select class="form-control" id="cfg-sound-beep">
+              <option value="true">เปิดใช้งาน</option>
+              <option value="false">ปิดใช้งาน</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>เปิดการใช้งาน เสียงพูดภาษาไทย (Speech Synthesis)</label>
+            <select class="form-control" id="cfg-sound-speech">
+              <option value="true">เปิดใช้งาน</option>
+              <option value="false">ปิดใช้งาน</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+          <button class="btn btn-primary" onclick="saveSettings()"><i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่า</button>
+          <button class="btn btn-secondary" onclick="testGASConnection()"><i class="fa-solid fa-plug"></i> ทดสอบการเชื่อมต่อ GAS</button>
+          <button class="btn btn-secondary" onclick="testSpeech()"><i class="fa-solid fa-volume-high"></i> ทดสอบเสียงพูด</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Mobile Bottom Navigation -->
+  <nav class="mobile-nav">
+    <button class="mobile-nav-item active" onclick="switchTab('tab-monitor')">
+      <i class="fa-solid fa-camera"></i>
+      <span>ตรวจวัด</span>
+    </button>
+    <button class="mobile-nav-item" onclick="switchTab('tab-guide')">
+      <i class="fa-solid fa-book-open"></i>
+      <span>คู่มือ</span>
+    </button>
+    <button class="mobile-nav-item" onclick="switchTab('tab-history')">
+      <i class="fa-solid fa-chart-line"></i>
+      <span>ประวัติ</span>
+    </button>
+    <button class="mobile-nav-item" onclick="switchTab('tab-settings')">
+      <i class="fa-solid fa-gear"></i>
+      <span>ตั้งค่า</span>
+    </button>
+  </nav>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Javascript Core Logic Engine -->
+  <script>
+    /* ==========================================================================
+       GLOBAL STATE & ARCHITECTURE CONFIGURATION
+       ========================================================================== */
+    const STATE = {
+      detector: null,
+      webcamStream: null,
+      isDetecting: false,
+      currentFacingMode: 'user',
+      appMode: 'personal', // 'personal' | 'classroom'
+      cameraAngle: 'front', // 'front' | 'angle45' | 'side'
+      
+      // Timers & Stats
+      startTime: null,
+      totalSeconds: 0,
+      goodSeconds: 0,
+      badSeconds: 0,
+      unknownSeconds: 0,
+      alertCount: 0,
+      
+      // Pose Baseline
+      isCalibrating: false,
+      calibrationFrames: [],
+      baseline: {
+        neckAngle: 15,
+        torsoAngle: 10,
+        shoulderTilt: 5
+      },
+      
+      // Realtime Calculated Values (EMA Smoothed)
+      smoothedAngles: {
+        neck: 0,
+        slouch: 0,
+        shoulder: 0
+      },
+
+      // Issue Tracking State Machine (candidate -> active -> resolved)
+      issues: {
+        forwardHead: { state: 'resolved', duration: 0, count: 0 },
+        slouch: { state: 'resolved', duration: 0, count: 0 },
+        shoulderTilt: { state: 'resolved', duration: 0, count: 0 }
+      },
+
+      // Configs
+      config: {
+        gasUrl: localStorage.getItem('smartflex_gas_url') || '',
+        warningSec: 3,
+        criticalSec: 8,
+        enableBeep: true,
+        enableSpeech: true
+      },
+
+      // Analytics Chart
+      chartInstance: null
+    };
+
+    /* ==========================================================================
+       INITIALIZATION & DOM EVENTS
+       ========================================================================== */
+    window.addEventListener('DOMContentLoaded', async () => {
+      initChart();
+      loadSettingsFromStorage();
+      if (STATE.config.gasUrl) {
+        testGASConnection();
+      }
+    });
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.innerHTML = `<i class="fa-solid fa-info-circle"></i> <span>${message}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 3500);
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.nav-btn, .mobile-nav-item').forEach(el => el.classList.remove('active'));
+      
+      document.getElementById(tabId).classList.add('active');
+      
+      // Sync Active Buttons
+      const indexMap = { 'tab-monitor': 0, 'tab-guide': 1, 'tab-history': 2, 'tab-settings': 3 };
+      const idx = indexMap[tabId];
+      if (idx !== undefined) {
+        const dBtns = document.querySelectorAll('.desktop-nav .nav-btn');
+        const mBtns = document.querySelectorAll('.mobile-nav .mobile-nav-item');
+        if (dBtns[idx]) dBtns[idx].classList.add('active');
+        if (mBtns[idx]) mBtns[idx].classList.add('active');
+      }
+
+      if (tabId === 'tab-history') {
+        fetchHistoryFromBackend();
+      }
+    }
+
+    /* ==========================================================================
+       CAMERA & TENSORFLOW MOVENET ENGINE
+       ========================================================================== */
+    async function startCamera() {
+      try {
+        showToast('กำลังเริ่มต้นกล้องและโหลดโมเดล AI...', 'info');
+        const video = document.getElementById('webcam');
+        
+        const constraints = {
+          video: {
+            facingMode: STATE.currentFacingMode,
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          }
+        };
+
+        STATE.webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = STATE.webcamStream;
+
+        await new Promise((resolve) => {
+          video.onloadedmetadata = () => resolve();
+        });
+
+        // Load MoveNet Model if not loaded
+        if (!STATE.detector) {
+          const detectorConfig = {
+            modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
+            enableSmoothing: true
+          };
+          STATE.detector = await poseDetection.createDetector(
+            poseDetection.SupportedModels.MoveNet,
+            detectorConfig
+          );
+        }
+
+        STATE.isDetecting = true;
+        STATE.startTime = new Date();
+        document.getElementById('btn-start-cam').disabled = true;
+        document.getElementById('btn-stop-cam').disabled = false;
+        document.getElementById('btn-calibrate').disabled = false;
+
+        showToast('กล้องพร้อมใช้งาน ระบบ AI เริ่มประมวลผล', 'info');
+        requestAnimationFrame(processVideoFrame);
+
+      } catch (err) {
+        console.error("Camera Init Error: ", err);
+        showToast('ไม่สามารถเข้าถึงกล้องได้: ' + err.message, 'error');
+      }
+    }
+
+    function stopCamera() {
+      STATE.isDetecting = false;
+      if (STATE.webcamStream) {
+        STATE.webcamStream.getTracks().forEach(track => track.stop());
+        STATE.webcamStream = null;
+      }
+      document.getElementById('btn-start-cam').disabled = false;
+      document.getElementById('btn-stop-cam').disabled = true;
+      document.getElementById('btn-calibrate').disabled = true;
+      
+      const canvas = document.getElementById('canvas-overlay');
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      showToast('ปิดกล้องเรียบร้อยแล้ว', 'info');
+    }
+
+    async function switchCamera() {
+      STATE.currentFacingMode = (STATE.currentFacingMode === 'user') ? 'environment' : 'user';
+      if (STATE.isDetecting) {
+        stopCamera();
+        await startCamera();
+      }
+    }
+
+    /* ==========================================================================
+       POSE PROCESSING & MATHEMATICAL CALCULATIONS
+       ========================================================================== */
+    let lastFrameTime = performance.now();
+
+    async function processVideoFrame() {
+      if (!STATE.isDetecting) return;
+
+      const video = document.getElementById('webcam');
+      const canvas = document.getElementById('canvas-overlay');
+      const ctx = canvas.getContext('2d');
+
+      if (video.readyState < 2) {
+        requestAnimationFrame(processVideoFrame);
+        return;
+      }
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // Calculate FPS
+      const now = performance.now();
+      const fps = Math.round(1000 / (now - lastFrameTime));
+      lastFrameTime = now;
+      document.getElementById('badge-fps').innerText = `FPS: ${fps}`;
+
+      // Run AI Detection
+      const poses = await STATE.detector.estimatePoses(video);
+
+      // Clear Canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (poses && poses.length > 0) {
+        if (STATE.appMode === 'personal') {
+          // Process Primary Person
+          const primaryPose = poses[0];
+          analyzePersonalPose(primaryPose, ctx, canvas.width, canvas.height);
+        } else {
+          // Classroom Multi-person Mode
+          analyzeClassroomPoses(poses, ctx);
+        }
+      } else {
+        // No Person Detected
+        STATE.unknownSeconds += 0.033;
+        document.getElementById('badge-status').innerText = 'สถานะ: ตรวจไม่พบบุคคล';
+        document.getElementById('badge-status').style.background = 'rgba(148, 163, 184, 0.8)';
+      }
+
+      updateTimersAndUI();
+
+      if (STATE.isDetecting) {
+        requestAnimationFrame(processVideoFrame);
+      }
+    }
+
+    /* Vector Math Helper Functions */
+    function calculateAngle(p1, p2, p3) {
+      const radians = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x);
+      let angle = Math.abs((radians * 180.0) / Math.PI);
+      if (angle > 180.0) angle = 360 - angle;
+      return angle;
+    }
+
+    function calculate2DDistance(p1, p2) {
+      return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+    }
+
+    function getKeypoint(pose, name) {
+      return pose.keypoints.find(k => k.name === name && k.score > 0.3);
+    }
+
+    /* Analyze Personal Mode */
+    function analyzePersonalPose(pose, ctx, width, height) {
+      const nose = getKeypoint(pose, 'nose');
+      const leftEar = getKeypoint(pose, 'left_ear');
+      const rightEar = getKeypoint(pose, 'right_ear');
+      const leftShoulder = getKeypoint(pose, 'left_shoulder');
+      const rightShoulder = getKeypoint(pose, 'right_shoulder');
+      const leftHip = getKeypoint(pose, 'left_hip');
+
+      drawSkeleton(pose, ctx);
+
+      if (!leftShoulder || !rightShoulder) {
+        STATE.unknownSeconds += 0.033;
+        return;
+      }
+
+      // 1. Calculate Neck / Forward Head Angle
+      let rawNeckAngle = 0;
+      if (leftEar && leftShoulder) {
+        rawNeckAngle = Math.abs(Math.atan2(leftEar.y - leftShoulder.y, leftEar.x - leftShoulder.x) * 180 / Math.PI) - 90;
+        rawNeckAngle = Math.abs(rawNeckAngle);
+      }
+
+      // 2. Calculate Slouch / Torso Lean Angle
+      let rawTorsoAngle = 0;
+      if (leftShoulder && leftHip) {
+        rawTorsoAngle = Math.abs(Math.atan2(leftHip.y - leftShoulder.y, leftHip.x - leftShoulder.x) * 180 / Math.PI) - 90;
+        rawTorsoAngle = Math.abs(rawTorsoAngle);
+      }
+
+      // 3. Calculate Shoulder Tilt
+      const rawShoulderTilt = Math.abs(Math.atan2(rightShoulder.y - leftShoulder.y, rightShoulder.x - leftShoulder.x) * 180 / Math.PI);
+
+      // Apply Exponential Moving Average (EMA) Smoother
+      const alpha = 0.2;
+      STATE.smoothedAngles.neck = (alpha * rawNeckAngle) + ((1 - alpha) * STATE.smoothedAngles.neck);
+      STATE.smoothedAngles.slouch = (alpha * rawTorsoAngle) + ((1 - alpha) * STATE.smoothedAngles.slouch);
+      STATE.smoothedAngles.shoulder = (alpha * rawShoulderTilt) + ((1 - alpha) * STATE.smoothedAngles.shoulder);
+
+      // Handle Calibration Phase
+      if (STATE.isCalibrating) {
+        STATE.calibrationFrames.push({ ...STATE.smoothedAngles });
+        return;
+      }
+
+      // Posture Issue Threshold Evaluation
+      let isBadPosture = false;
+
+      // Neck Forward Check
+      if (STATE.smoothedAngles.neck > (STATE.baseline.neckAngle + 12)) {
+        updateIssueState('forwardHead', true);
+        isBadPosture = true;
+      } else {
+        updateIssueState('forwardHead', false);
+      }
+
+      // Slouch Check
+      if (STATE.smoothedAngles.slouch > (STATE.baseline.torsoAngle + 10)) {
+        updateIssueState('slouch', true);
+        isBadPosture = true;
+      } else {
+        updateIssueState('slouch', false);
+      }
+
+      // Shoulder Tilt Check
+      if (STATE.smoothedAngles.shoulder > (STATE.baseline.shoulderTilt + 8)) {
+        updateIssueState('shoulderTilt', true);
+        isBadPosture = true;
+      } else {
+        updateIssueState('shoulderTilt', false);
+      }
+
+      // Update Time Totals
+      if (isBadPosture) {
+        STATE.badSeconds += 0.033;
+        document.getElementById('badge-status').innerText = 'สถานะ: ท่าทางควรปรับ';
+        document.getElementById('badge-status').style.background = 'rgba(239, 68, 68, 0.8)';
+      } else {
+        STATE.goodSeconds += 0.033;
+        document.getElementById('badge-status').innerText = 'สถานะ: ท่าทางดี';
+        document.getElementById('badge-status').style.background = 'rgba(16, 185, 129, 0.8)';
+      }
+    }
+
+    /* Analyze Classroom Mode */
+    function analyzeClassroomPoses(poses, ctx) {
+      let goodCount = 0;
+      let badCount = 0;
+
+      poses.forEach((pose, idx) => {
+        const leftShoulder = getKeypoint(pose, 'left_shoulder');
+        const rightShoulder = getKeypoint(pose, 'right_shoulder');
+
+        if (leftShoulder && rightShoulder) {
+          const tilt = Math.abs(Math.atan2(rightShoulder.y - leftShoulder.y, rightShoulder.x - leftShoulder.x) * 180 / Math.PI);
+          const color = (tilt < 10) ? '#10b981' : '#ef4444';
+          
+          if (tilt < 10) goodCount++; else badCount++;
+
+          // Draw Bounding Box around person
+          const minX = Math.min(...pose.keypoints.filter(k=>k.score>0.3).map(k=>k.x));
+          const minY = Math.min(...pose.keypoints.filter(k=>k.score>0.3).map(k=>k.y));
+          const maxX = Math.max(...pose.keypoints.filter(k=>k.score>0.3).map(k=>k.x));
+          const maxY = Math.max(...pose.keypoints.filter(k=>k.score>0.3).map(k=>k.y));
+
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 3;
+          ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+          
+          ctx.fillStyle = color;
+          ctx.font = '14px Kanit';
+          ctx.fillText(`Person ${idx + 1}`, minX, minY - 5);
+        }
+      });
+
+      if (badCount > 0) STATE.badSeconds += 0.033;
+      else STATE.goodSeconds += 0.033;
+
+      document.getElementById('badge-status').innerText = `ห้องเรียน: ปกติ ${goodCount} คน / ควรปรับ ${badCount} คน`;
+    }
+
+    /* Skeleton Overlay Renderer */
+    function drawSkeleton(pose, ctx) {
+      const adjacentKeypoints = poseDetection.util.getAdjacentPairs(poseDetection.SupportedModels.MoveNet);
+      
+      adjacentKeypoints.forEach(([i, j]) => {
+        const kp1 = pose.keypoints[i];
+        const kp2 = pose.keypoints[j];
+
+        if (kp1.score > 0.3 && kp2.score > 0.3) {
+          ctx.beginPath();
+          ctx.moveTo(kp1.x, kp1.y);
+          ctx.lineTo(kp2.x, kp2.y);
+          ctx.strokeStyle = '#0284c7';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        }
+      });
+
+      pose.keypoints.forEach(kp => {
+        if (kp.score > 0.3) {
+          ctx.beginPath();
+          ctx.arc(kp.x, kp.y, 5, 0, 2 * Math.PI);
+          ctx.fillStyle = '#f59e0b';
+          ctx.fill();
+        }
+      });
+    }
+
+    /* Issue State Machine & Audio Speech Trigger */
+    function updateIssueState(issueKey, isTriggered) {
+      const issue = STATE.issues[issueKey];
+
+      if (isTriggered) {
+        issue.duration += 0.033;
+        if (issue.duration >= STATE.config.warningSec && issue.state === 'resolved') {
+          issue.state = 'active';
+          issue.count++;
+          STATE.alertCount++;
+          triggerAlertFeedback(issueKey);
+        }
+      } else {
+        issue.duration = 0;
+        issue.state = 'resolved';
+      }
+    }
+
+    function triggerAlertFeedback(issueKey) {
+      const messages = {
+        forwardHead: 'กรุณายืดคอขึ้น และไม่ยื่นศีรษะใกล้จอภาพเกินไป',
+        slouch: 'กรุณายืดหลังตรง แนบชิดพนักพิง',
+        shoulderTilt: 'กรุณาปรับระดับไหล่ให้เท่ากัน'
+      };
+
+      const msg = messages[issueKey] || 'กรุณาปรับท่านั่งให้ถูกต้อง';
+
+      if (STATE.config.enableBeep) {
+        playBeepSound();
+      }
+
+      if (STATE.config.enableSpeech) {
+        speakText(msg);
+      }
+
+      document.getElementById('txt-advice').innerText = msg;
+    }
+
+    /* Web Audio API Beep Generator */
+    function playBeepSound() {
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.2);
+      } catch (e) {
+        console.error("Audio Context Error: ", e);
+      }
+    }
+
+    /* Web Speech API Thai TTS */
+    function speakText(text) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel(); // Clear queue
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'th-TH';
+        utterance.rate = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+
+    /* Baseline Calibration Logic */
+    function startCalibration() {
+      STATE.isCalibrating = true;
+      STATE.calibrationFrames = [];
+      showToast('กำลังจับ Baseline ท่ามาตรฐาน... นั่งในท่าที่ถูกต้องและนิ่งไว้ 3 วินาที', 'info');
+
+      setTimeout(() => {
+        STATE.isCalibrating = false;
+        if (STATE.calibrationFrames.length > 0) {
+          const avgNeck = STATE.calibrationFrames.reduce((acc, cur) => acc + cur.neck, 0) / STATE.calibrationFrames.length;
+          const avgTorso = STATE.calibrationFrames.reduce((acc, cur) => acc + cur.slouch, 0) / STATE.calibrationFrames.length;
+          const avgShoulder = STATE.calibrationFrames.reduce((acc, cur) => acc + cur.shoulder, 0) / STATE.calibrationFrames.length;
+
+          STATE.baseline.neckAngle = avgNeck;
+          STATE.baseline.torsoAngle = avgTorso;
+          STATE.baseline.shoulderTilt = avgShoulder;
+
+          showToast(`บันทึก Baseline สำเร็จ! (มุมคอ: ${Math.round(avgNeck)}°, มุมตัว: ${Math.round(avgTorso)}°)`, 'info');
+        }
+      }, 3000);
+    }
+
+    /* UI Realtime Update Loop */
+    function updateTimersAndUI() {
+      STATE.totalSeconds = STATE.goodSeconds + STATE.badSeconds;
+      
+      const goodSec = Math.round(STATE.goodSeconds);
+      const badSec = Math.round(STATE.badSeconds);
+      
+      let score = 0;
+      if (goodSec + badSec > 0) {
+        score = Math.round((goodSec / (goodSec + badSec)) * 100);
+      }
+
+      document.getElementById('val-score').innerText = `${score}%`;
+      document.getElementById('val-good-sec').innerText = `${goodSec}s`;
+      document.getElementById('val-bad-sec').innerText = `${badSec}s`;
+      document.getElementById('val-alerts').innerText = STATE.alertCount;
+
+      // Update Angle Gauge Text & Bars
+      const nDeg = Math.round(STATE.smoothedAngles.neck);
+      const sDeg = Math.round(STATE.smoothedAngles.slouch);
+      const shDeg = Math.round(STATE.smoothedAngles.shoulder);
+
+      document.getElementById('deg-neck').innerText = `${nDeg}°`;
+      document.getElementById('deg-slouch').innerText = `${sDeg}°`;
+      document.getElementById('deg-shoulder').innerText = `${shDeg}°`;
+
+      document.getElementById('bar-neck').style.width = `${Math.min(100, nDeg * 2)}%`;
+      document.getElementById('bar-slouch').style.width = `${Math.min(100, sDeg * 2)}%`;
+      document.getElementById('bar-shoulder').style.width = `${Math.min(100, shDeg * 5)}%`;
+
+      if (goodSec === 0 && badSec === 0) {
+        document.getElementById('txt-advice').innerText = 'จัดตำแหน่งให้อยู่ในกรอบภาพเพื่อเริ่มตรวจประเมิน';
+      }
+    }
+
+    function onModeChange() {
+      STATE.appMode = document.getElementById('select-app-mode').value;
+      document.getElementById('badge-mode').innerText = `โหมด: ${STATE.appMode === 'personal' ? 'ส่วนบุคคล' : 'ห้องเรียน'}`;
+    }
+
+    function onCameraAngleChange() {
+      STATE.cameraAngle = document.getElementById('select-camera-angle').value;
+    }
+
+    /* ==========================================================================
+       BACKEND JSONP COMMUNICATION (Google Apps Script)
+       ========================================================================== */
+    function sendJSONPRequest(url, action, data, callbackName) {
+      return new Promise((resolve, reject) => {
+        const uniqueCallback = callbackName + '_' + Math.round(Math.random() * 100000);
+        window[uniqueCallback] = function(response) {
+          delete window[uniqueCallback];
+          document.body.removeChild(script);
+          resolve(response);
+        };
+
+        const script = document.createElement('script');
+        const payload = encodeURIComponent(JSON.stringify(data));
+        script.src = `${url}?action=${action}&payload=${payload}&callback=${uniqueCallback}`;
+        script.onerror = () => {
+          delete window[uniqueCallback];
+          document.body.removeChild(script);
+          reject(new Error('JSONP Network Request Failed'));
+        };
+        document.body.appendChild(script);
+      });
+    }
+
+    async function saveSessionToBackend() {
+      if (!STATE.config.gasUrl) {
+        showToast('กรุณาตั้งค่า Google Apps Script URL ก่อนบันทึกข้อมูล', 'error');
+        switchTab('tab-settings');
+        return;
+      }
+
+      showToast('กำลังส่งข้อมูลไปยัง Google Sheets...', 'info');
+
+      const payload = {
+        SessionID: 'SES-' + Date.now(),
+        SavedAt: new Date().toISOString(),
+        AppMode: STATE.appMode,
+        UserID: 'USR-' + Math.floor(Math.random() * 1000),
+        Name: document.getElementById('user-name').value || 'Anonymous',
+        Age: 25,
+        Role: 'User',
+        ActivityMode: 'Working',
+        Organization: document.getElementById('user-org').value || 'General',
+        ClassName: '-',
+        DeviceType: /Mobi|Android/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop',
+        CameraType: STATE.currentFacingMode,
+        CameraAngle: STATE.cameraAngle,
+        TotalSeconds: Math.round(STATE.totalSeconds),
+        GoodSeconds: Math.round(STATE.goodSeconds),
+        BadSeconds: Math.round(STATE.badSeconds),
+        UnknownSeconds: Math.round(STATE.unknownSeconds),
+        Score: Math.round((STATE.goodSeconds / (STATE.goodSeconds + STATE.badSeconds || 1)) * 100),
+        AlertCount: STATE.alertCount,
+        MainIssue: STATE.issues.forwardHead.count > STATE.issues.slouch.count ? 'Forward Head' : 'Slouching',
+        ForwardHeadCount: STATE.issues.forwardHead.count,
+        SlouchCount: STATE.issues.slouch.count,
+        ShoulderTiltCount: STATE.issues.shoulderTilt.count,
+        ElbowAngleIssueCount: 0,
+        KneeAngleIssueCount: 0,
+        ScreenDistanceIssueCount: 0,
+        EyeBreakCount: 0,
+        PostureBreakCount: 0,
+        StretchBreakCount: 0,
+        ImprovementAdvice: document.getElementById('txt-advice').innerText,
+        StartedAt: STATE.startTime ? STATE.startTime.toISOString() : new Date().toISOString(),
+        EndedAt: new Date().toISOString(),
+        Notes: 'SmartFlex Auto Logged'
+      };
+
+      try {
+        const res = await sendJSONPRequest(STATE.config.gasUrl, 'saveSession', payload, 'cb_saveSession');
+        if (res.status === 'success') {
+          showToast('บันทึกข้อมูลลง Google Sheets เรียบร้อยแล้ว!', 'info');
+        } else {
+          showToast('บันทึกไม่สำเร็จ: ' + res.message, 'error');
+        }
+      } catch (err) {
+        showToast('เกิดข้อผิดพลาดในการส่งข้อมูล: ' + err.message, 'error');
+      }
+    }
+
+    async function fetchHistoryFromBackend() {
+      if (!STATE.config.gasUrl) return;
+
+      try {
+        showToast('กำลังดึงประวัติการประเมิน...', 'info');
+        const res = await sendJSONPRequest(STATE.config.gasUrl, 'getHistory', {}, 'cb_getHistory');
+        
+        if (res.status === 'success' && res.data) {
+          renderHistoryTable(res.data);
+          updateChartData(res.data);
+          showToast('ดึงข้อมูลประวัติสำเร็จ', 'info');
+        }
+      } catch (err) {
+        showToast('ไม่สามารถดึงข้อมูลประวัติได้: ' + err.message, 'error');
+      }
+    }
+
+    function renderHistoryTable(data) {
+      const tbody = document.getElementById('tbody-history');
+      tbody.innerHTML = '';
+
+      if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">ไม่มีข้อมูลประวัติ</td></tr>';
+        return;
+      }
+
+      data.slice().reverse().forEach(row => {
+        const tr = document.createElement('tr');
+        const dateStr = new Date(row.SavedAt || Date.now()).toLocaleString('th-TH');
+        tr.innerHTML = `
+          <td>${dateStr}</td>
+          <td>${row.Name || '-'}</td>
+          <td>${row.AppMode || '-'}</td>
+          <td>${row.TotalSeconds || 0}s</td>
+          <td><strong style="color: ${row.Score >= 80 ? 'var(--status-good)' : 'var(--status-danger)'}">${row.Score}%</strong></td>
+          <td>${row.MainIssue || 'ไม่มี'}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function testGASConnection() {
+      const url = document.getElementById('gas-url').value || STATE.config.gasUrl;
+      if (!url) {
+        showToast('กรุณาระบุ URL ของ Google Apps Script', 'error');
+        return;
+      }
+
+      try {
+        showToast('กำลังทดสอบการเชื่อมต่อ...', 'info');
+        const res = await sendJSONPRequest(url, 'ping', {}, 'cb_ping');
+        if (res.status === 'success') {
+          showToast('เชื่อมต่อกับ Google Apps Script สำเร็จ!', 'info');
+          document.getElementById('backend-status-pill').className = 'status-pill online';
+          document.getElementById('backend-status-text').innerText = 'GAS: เชื่อมต่อแล้ว';
+          STATE.config.gasUrl = url;
+          localStorage.setItem('smartflex_gas_url', url);
+        }
+      } catch (err) {
+        showToast('การเชื่อมต่อล้มเหลว ตรวจสอบ URL หรือ Permissions', 'error');
+        document.getElementById('backend-status-pill').className = 'status-pill offline';
+        document.getElementById('backend-status-text').innerText = 'GAS: ล้มเหลว';
+      }
+    }
+
+    /* ==========================================================================
+       SETTINGS & STORAGE ENGINE
+       ========================================================================== */
+    function saveSettings() {
+      STATE.config.gasUrl = document.getElementById('gas-url').value;
+      STATE.config.warningSec = parseInt(document.getElementById('cfg-warn-sec').value);
+      STATE.config.criticalSec = parseInt(document.getElementById('cfg-crit-sec').value);
+      STATE.config.enableBeep = document.getElementById('cfg-sound-beep').value === 'true';
+      STATE.config.enableSpeech = document.getElementById('cfg-sound-speech').value === 'true';
+
+      localStorage.setItem('smartflex_gas_url', STATE.config.gasUrl);
+      localStorage.setItem('smartflex_config', JSON.stringify(STATE.config));
+
+      showToast('บันทึกการตั้งค่าลงเบราว์เซอร์เรียบร้อย', 'info');
+      testGASConnection();
+    }
+
+    function loadSettingsFromStorage() {
+      const savedConfig = localStorage.getItem('smartflex_config');
+      if (savedConfig) {
+        const parsed = JSON.parse(savedConfig);
+        STATE.config = { ...STATE.config, ...parsed };
+        
+        document.getElementById('gas-url').value = STATE.config.gasUrl || '';
+        document.getElementById('cfg-warn-sec').value = STATE.config.warningSec || 3;
+        document.getElementById('cfg-crit-sec').value = STATE.config.criticalSec || 8;
+        document.getElementById('cfg-sound-beep').value = STATE.config.enableBeep ? 'true' : 'false';
+        document.getElementById('cfg-sound-speech').value = STATE.config.enableSpeech ? 'true' : 'false';
+      }
+    }
+
+    function testSpeech() {
+      speakText('ทดสอบระบบเสียงสังเคราะห์ภาษาไทย SmartFlex พร้อมใช้งานค่ะ');
+    }
+
+    /* ==========================================================================
+       ANALYTICS CHART & EXPORT
+       ========================================================================== */
+    function initChart() {
+      const ctx = document.getElementById('chart-history').getContext('2d');
+      STATE.chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: ['ครั้งที่ 1', 'ครั้งที่ 2', 'ครั้งที่ 3', 'ครั้งที่ 4', 'ครั้งที่ 5'],
+          datasets: [{
+            label: 'คะแนนท่านั่ง (%)',
+            data: [85, 90, 78, 92, 88],
+            borderColor: '#0284c7',
+            backgroundColor: 'rgba(2, 132, 199, 0.1)',
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { min: 0, max: 100 }
+          }
+        }
+      });
+    }
+
+    function updateChartData(historyData) {
+      if (!STATE.chartInstance || !historyData) return;
+      const recent = historyData.slice(-10);
+      const labels = recent.map((_, i) => `รายการที่ ${i + 1}`);
+      const scores = recent.map(r => r.Score || 0);
+
+      STATE.chartInstance.data.labels = labels;
+      STATE.chartInstance.data.datasets[0].data = scores;
+      STATE.chartInstance.update();
+    }
+
+    function exportToCSV() {
+      const tbody = document.getElementById('tbody-history');
+      let csvContent = "data:text/csv;charset=utf-8,Date,User,Mode,TotalSeconds,Score,MainIssue\n";
+      
+      const rows = tbody.querySelectorAll('tr');
+      rows.forEach(row => {
+        const cols = row.querySelectorAll('td');
+        if (cols.length >= 6) {
+          const rowData = Array.from(cols).map(c => `"${c.innerText}"`).join(',');
+          csvContent += rowData + "\n";
+        }
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `smartflex_report_${Date.now()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  </script>
+</body>
+</html>
